@@ -1,0 +1,24 @@
+[package]
+name = "tool-lp"
+version = "0.1.0"
+description = "Your proxy withdraw program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = []
+no-entrypoint = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+devnet = ["raydium-cp-swap/devnet"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "0.31.0"
+anchor-spl = "0.31.0"
+
+raydium-cp-swap = { git = "https://github.com/raydium-io/raydium-cp-swap", features = ["no-entrypoint", "cpi"] }
+num_enum = "0.7"
+spl-memo = "6.0.0"
