@@ -5,8 +5,6 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-tool_lp = "Hog1fQ9MwCd6qQFoVYczbbXwEWNd3m1bnNakPGg4frK"
 
 [registry]
 url = "https://api.apr.dev"

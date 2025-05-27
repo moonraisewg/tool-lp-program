@@ -3,72 +3,58 @@ use anchor_lang::prelude::*;
 pub mod instructions;
 use instructions::*;
 
-declare_id!("Hog1fQ9MwCd6qQFoVYczbbXwEWNd3m1bnNakPGg4frK");
+declare_id!("DduTe3VFPwWGN2EBh8FZ1GSnXe7VFotp1A8eej7qwgX2");
+
+pub const ADMIN_WALLET: Pubkey = pubkey!("4WbU9nksassGissHNW7bSXZrYDsLKrjSDE7WxnLWfys1");
 
 #[program]
 pub mod tool_lp {
     use super::*;
 
-    pub fn initialize_vault(ctx: Context<InitializeVault>, pool_id: Pubkey, bump: u8) -> Result<()> {
-        instructions::initialize_vault::handler(ctx, pool_id, bump)
+    pub fn initialize_vault(ctx: Context<InitializeVault>) -> Result<()> {
+        instructions::initialize_vault::handler(ctx)
     }
 
-    pub fn deposit(
-        ctx: Context<Deposit>,
-        amount: u64,
-        unlock_timestamp: i64,
-    ) -> Result<()> {
+    pub fn deposit(ctx: Context<Deposit>, amount: u64, unlock_timestamp: i64) -> Result<()> {
         instructions::deposit::handler(ctx, amount, unlock_timestamp)
     }
 
-    pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
-        instructions::withdraw::handler(ctx, amount)
-    }
-
-    pub fn proxy_withdraw(
-        ctx: Context<ProxyWithdraw>,
-        lp_token_amount: u64,
-        minimum_token_0_amount: u64,
-        minimum_token_1_amount: u64,
-    ) -> Result<()> {
-        instructions::proxy_withdraw(
-            ctx,
-            lp_token_amount,
-            minimum_token_0_amount,
-            minimum_token_1_amount,
-        )
+    pub fn withdraw(ctx: Context<Withdraw>, lp_token_amount: u64) -> Result<()> {
+        instructions::withdraw::handler(ctx, lp_token_amount)
     }
 }
 
 #[account]
 pub struct Vault {
-    pub pool_id: Pubkey,            // Raydium pool ID
-    pub token_mint: Pubkey,         // LP token mint
-    pub vault_token_account: Pubkey,// Vault token account
-    pub total_locked: u64,          // Total locked tokens
-    pub bump: u8,                   // Bump seed for PDA
+    pub pool_state: Pubkey,
+    pub token_mint: Pubkey,
+    pub vault_token_account: Pubkey,
+    pub total_locked: u64,
+    pub bump: u8,
 }
 
 impl Vault {
-    pub const LEN: usize = 32 + 32 + 32 + 8 + 1; // Pubkeys + u64 + u8
+    pub const LEN: usize = 32 + 32 + 32 + 8 + 1;
 }
 
 #[account]
 pub struct UserLock {
-    pub user: Pubkey,         // User address
-    pub amount: u64,          // Locked token amount
-    pub unlock_timestamp: i64, // Unlock timestamp
+    pub user: Pubkey,
+    pub amount: u64,
+    pub unlock_timestamp: i64,
+    pub deposit_token_per_lp_0: u64,
+    pub deposit_token_per_lp_1: u64,
 }
 
 impl UserLock {
-    pub const LEN: usize = 32 + 8 + 8; // Pubkey + u64 + i64
+    pub const LEN: usize = 32 + 8 + 8 + 8 + 8;
 }
 
 #[event]
 pub struct DepositEvent {
     pub user: Pubkey,
     pub vault: Pubkey,
-    pub pool_id: Pubkey,
+    pub pool_state: Pubkey,
     pub amount: u64,
     pub unlock_timestamp: i64,
     pub timestamp: i64,
@@ -78,8 +64,12 @@ pub struct DepositEvent {
 pub struct WithdrawEvent {
     pub user: Pubkey,
     pub vault: Pubkey,
-    pub pool_id: Pubkey,
-    pub amount: u64,
+    pub pool_state: Pubkey,
+    pub lp_amount: u64,
+    pub token_0_amount: u64,
+    pub token_1_amount: u64,
+    pub fee_0_amount: u64,
+    pub fee_1_amount: u64,
     pub timestamp: i64,
 }
 
@@ -97,4 +87,10 @@ pub enum VaultError {
     ArithmeticUnderflow,
     #[msg("Invalid unlock timestamp")]
     InvalidUnlockTimestamp,
+    #[msg("Invalid token vault")]
+    InvalidTokenVault,
+    #[msg("Invalid token program")]
+    InvalidTokenProgram,
+    #[msg("Vault token account not initialized")]
+    VaultTokenAccountNotInitialized,
 }
