@@ -5,7 +5,7 @@ use instructions::*;
 
 declare_id!("DduTe3VFPwWGN2EBh8FZ1GSnXe7VFotp1A8eej7qwgX2");
 
-pub const ADMIN_WALLET: Pubkey = pubkey!("4WbU9nksassGissHNW7bSXZrYDsLKrjSDE7WxnLWfys1");
+pub const ADMIN_WALLET: Pubkey = pubkey!("As1T4LoB97vriM5HWXy2Z23s8Sp9ymZgibnnc2r9mCQZ");
 
 #[program]
 pub mod tool_lp {
@@ -74,23 +74,15 @@ pub struct WithdrawEvent {
 }
 
 #[error_code]
-pub enum VaultError {
+pub enum Error {
     #[msg("Lock period has not yet expired")]
     LockNotYetExpired,
-    #[msg("Invalid LP token mint")]
-    InvalidMint,
-    #[msg("Insufficient balance to withdraw")]
+    #[msg("Invalid input: mint, vault, program, or timestamp")]
+    InvalidInput,
+    #[msg("Insufficient balance")]
     InsufficientBalance,
-    #[msg("Arithmetic overflow error")]
-    ArithmeticOverflow,
-    #[msg("Arithmetic underflow error")]
-    ArithmeticUnderflow,
-    #[msg("Invalid unlock timestamp")]
-    InvalidUnlockTimestamp,
-    #[msg("Invalid token vault")]
-    InvalidTokenVault,
-    #[msg("Invalid token program")]
-    InvalidTokenProgram,
-    #[msg("Vault token account not initialized")]
-    VaultTokenAccountNotInitialized,
+    #[msg("Arithmetic calculation error")]
+    ArithmeticError,
+    #[msg("Account not initialized")]
+    AccountNotInitialized,
 }

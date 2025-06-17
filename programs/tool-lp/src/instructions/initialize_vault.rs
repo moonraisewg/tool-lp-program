@@ -5,36 +5,32 @@ use anchor_spl::{
 };
 use raydium_cp_swap::states::PoolState;
 
-use crate::{Vault, VaultError};
+use crate::{Error, Vault};
 
 pub fn handler(ctx: Context<InitializeVault>) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
     let pool_state = ctx.accounts.pool_state.load()?;
 
-    // Validate token_mint matches pool's lp_mint
     require!(
         pool_state.lp_mint == ctx.accounts.token_mint.key(),
-        VaultError::InvalidMint
+        Error::InvalidInput
     );
 
-    // Validate token_0_vault and token_1_vault match pool_state
     require!(
         ctx.accounts.token_0_vault.key() == pool_state.token_0_vault,
-        VaultError::InvalidTokenVault
+        Error::InvalidInput
     );
     require!(
         ctx.accounts.token_1_vault.key() == pool_state.token_1_vault,
-        VaultError::InvalidTokenVault
+        Error::InvalidInput
     );
 
-    // Initialize vault
     vault.pool_state = ctx.accounts.pool_state.key();
     vault.token_mint = ctx.accounts.token_mint.key();
     vault.vault_token_account = ctx.accounts.vault_token_account.key();
     vault.total_locked = 0;
     vault.bump = ctx.bumps.vault;
 
-    // Create vault_token_0_account if it doesn't exist
     if ctx
         .accounts
         .vault_token_0_account
@@ -54,7 +50,6 @@ pub fn handler(ctx: Context<InitializeVault>) -> Result<()> {
         ))?;
     }
 
-    // Create vault_token_1_account if it doesn't exist
     if ctx
         .accounts
         .vault_token_1_account

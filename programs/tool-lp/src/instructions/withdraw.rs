@@ -5,7 +5,7 @@ use anchor_spl::{
 };
 use raydium_cp_swap::{cpi, program::RaydiumCpSwap, states::PoolState};
 
-use crate::{UserLock, Vault, VaultError, WithdrawEvent, ADMIN_WALLET};
+use crate::{Error, UserLock, Vault, WithdrawEvent, ADMIN_WALLET};
 
 pub fn handler(ctx: Context<Withdraw>, lp_token_amount: u64) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
@@ -17,84 +17,109 @@ pub fn handler(ctx: Context<Withdraw>, lp_token_amount: u64) -> Result<()> {
 
         require!(
             ctx.accounts.token_0_vault.key() == pool_state.token_0_vault,
-            VaultError::InvalidTokenVault
+            Error::InvalidInput
         );
         require!(
             ctx.accounts.token_1_vault.key() == pool_state.token_1_vault,
-            VaultError::InvalidTokenVault
+            Error::InvalidInput
         );
         require!(
             ctx.accounts.lp_mint.key() == pool_state.lp_mint,
-            VaultError::InvalidMint
+            Error::InvalidInput
         );
         require!(
             ctx.accounts.token_0_program.key() == pool_state.token_0_program,
-            VaultError::InvalidTokenProgram
+            Error::InvalidInput
         );
         require!(
             ctx.accounts.token_1_program.key() == pool_state.token_1_program,
-            VaultError::InvalidTokenProgram
+            Error::InvalidInput
         );
 
         require!(
             current_timestamp >= user_lock.unlock_timestamp,
-            VaultError::LockNotYetExpired
+            Error::LockNotYetExpired
         );
 
         require!(
             user_lock.amount >= lp_token_amount,
-            VaultError::InsufficientBalance
+            Error::InsufficientBalance
         );
 
         let available_balance = ctx.accounts.vault_token_account.amount;
         require!(
             available_balance >= lp_token_amount,
-            VaultError::InsufficientBalance
+            Error::InsufficientBalance
         );
 
         let (vault_0_amount, vault_1_amount) = pool_state.vault_amount_without_fee(
             ctx.accounts.token_0_vault.amount,
             ctx.accounts.token_1_vault.amount,
         );
-        let withdraw_token_per_lp_0 = vault_0_amount
+
+        let raw_token_0_amount = lp_token_amount
+            .checked_mul(vault_0_amount)
+            .ok_or(Error::ArithmeticError)?
             .checked_div(pool_state.lp_supply)
-            .ok_or(VaultError::ArithmeticUnderflow)?;
-        let withdraw_token_per_lp_1 = vault_1_amount
+            .ok_or(Error::ArithmeticError)?;
+
+        let raw_token_1_amount = lp_token_amount
+            .checked_mul(vault_1_amount)
+            .ok_or(Error::ArithmeticError)?
             .checked_div(pool_state.lp_supply)
-            .ok_or(VaultError::ArithmeticUnderflow)?;
+            .ok_or(Error::ArithmeticError)?;
 
-        let growth_0 = withdraw_token_per_lp_0
-            .checked_sub(user_lock.deposit_token_per_lp_0)
-            .ok_or(VaultError::ArithmeticUnderflow)?;
-        let growth_1 = withdraw_token_per_lp_1
-            .checked_sub(user_lock.deposit_token_per_lp_1)
-            .ok_or(VaultError::ArithmeticUnderflow)?;
+        let deposit_token_0_amount = lp_token_amount
+            .checked_mul(user_lock.deposit_token_per_lp_0)
+            .ok_or(Error::ArithmeticError)?;
 
-        let fee_0_amount = growth_0
-            .checked_mul(lp_token_amount)
-            .ok_or(VaultError::ArithmeticOverflow)?
-            .checked_mul(20)
-            .ok_or(VaultError::ArithmeticOverflow)?
-            .checked_div(100)
-            .ok_or(VaultError::ArithmeticUnderflow)?;
-        let fee_1_amount = growth_1
-            .checked_mul(lp_token_amount)
-            .ok_or(VaultError::ArithmeticOverflow)?
-            .checked_mul(20)
-            .ok_or(VaultError::ArithmeticOverflow)?
-            .checked_div(100)
-            .ok_or(VaultError::ArithmeticUnderflow)?;
+        let deposit_token_1_amount = lp_token_amount
+            .checked_mul(user_lock.deposit_token_per_lp_1)
+            .ok_or(Error::ArithmeticError)?;
 
-        let token_0_amount = lp_token_amount
-            .checked_mul(withdraw_token_per_lp_0)
-            .ok_or(VaultError::ArithmeticOverflow)?
-            .checked_sub(fee_0_amount)
-            .ok_or(VaultError::ArithmeticUnderflow)?;
-        let token_1_amount = lp_token_amount
-            .checked_mul(withdraw_token_per_lp_1)
-            .ok_or(VaultError::ArithmeticOverflow)?
-            .checked_sub(fee_1_amount)
-            .ok_or(VaultError::ArithmeticUnderflow)?;
+        let growth_0 = (raw_token_0_amount as i128)
+            .checked_sub(deposit_token_0_amount as i128)
+            .ok_or(Error::ArithmeticError)?;
+
+        let growth_1 = (raw_token_1_amount as i128)
+            .checked_sub(deposit_token_1_amount as i128)
+            .ok_or(Error::ArithmeticError)?;
+
+        let fee_0_amount = if growth_0 > 0 {
+            (growth_0 as u64)
+                .checked_mul(20)
+                .ok_or(Error::ArithmeticError)?
+                .checked_div(100)
+                .ok_or(Error::ArithmeticError)?
+        } else {
+            0
+        };
+
+        let fee_1_amount = if growth_1 > 0 {
+            (growth_1 as u64)
+                .checked_mul(20)
+                .ok_or(Error::ArithmeticError)?
+                .checked_div(100)
+                .ok_or(Error::ArithmeticError)?
+        } else {
+            0
+        };
+
+        let token_0_amount = deposit_token_0_amount
+            .checked_add(if growth_0 > 0 {
+                (growth_0 as u64).checked_sub(fee_0_amount).unwrap_or(0)
+            } else {
+                0
+            })
+            .ok_or(Error::ArithmeticError)?;
+
+        let token_1_amount = deposit_token_1_amount
+            .checked_add(if growth_1 > 0 {
+                (growth_1 as u64).checked_sub(fee_1_amount).unwrap_or(0)
+            } else {
+                0
+            })
+            .ok_or(Error::ArithmeticError)?;
 
         (token_0_amount, token_1_amount, fee_0_amount, fee_1_amount)
     };
@@ -132,12 +157,7 @@ pub fn handler(ctx: Context<Withdraw>, lp_token_amount: u64) -> Result<()> {
         signer_seeds,
     );
 
-    cpi::withdraw(
-        cpi_context,
-        lp_token_amount,
-        token_0_amount + fee_0_amount,
-        token_1_amount + fee_1_amount,
-    )?;
+    cpi::withdraw(cpi_context, lp_token_amount, token_0_amount, token_1_amount)?;
 
     if token_0_amount > 0 {
         token_interface::transfer_checked(
@@ -248,11 +268,11 @@ pub fn handler(ctx: Context<Withdraw>, lp_token_amount: u64) -> Result<()> {
     user_lock.amount = user_lock
         .amount
         .checked_sub(lp_token_amount)
-        .ok_or(VaultError::ArithmeticUnderflow)?;
+        .ok_or(Error::ArithmeticError)?;
     vault.total_locked = vault
         .total_locked
         .checked_sub(lp_token_amount)
-        .ok_or(VaultError::ArithmeticUnderflow)?;
+        .ok_or(Error::ArithmeticError)?;
 
     emit!(WithdrawEvent {
         user: ctx.accounts.user.key(),
@@ -316,13 +336,13 @@ pub struct Withdraw<'info> {
     #[account(mut, address = vault.pool_state)]
     pub pool_state: AccountLoader<'info, PoolState>,
     pub cp_swap_program: Program<'info, RaydiumCpSwap>,
-    #[account(
-        seeds = [
+    #[account(  
+        seeds = [  
             raydium_cp_swap::AUTH_SEED.as_bytes(),
-        ],
-        seeds::program = cp_swap_program,
-        bump,
-    )]
+        ],  
+        seeds::program = cp_swap_program,  
+        bump,  
+    )]  
     /// CHECK: pool vault and lp mint authority
     pub authority: UncheckedAccount<'info>,
     pub token_mint: InterfaceAccount<'info, Mint>,

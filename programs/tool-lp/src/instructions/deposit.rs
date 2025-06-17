@@ -2,28 +2,22 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, TransferChecked};
 use raydium_cp_swap::states::PoolState;
 
-use crate::{DepositEvent, UserLock, Vault, VaultError};
+use crate::{DepositEvent, Error, UserLock, Vault};
 
 pub fn handler(ctx: Context<Deposit>, amount: u64, unlock_timestamp: i64) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
     let user_lock = &mut ctx.accounts.user_lock;
     let current_timestamp = Clock::get()?.unix_timestamp;
 
-    require!(
-        unlock_timestamp > current_timestamp,
-        VaultError::InvalidUnlockTimestamp
-    );
+    require!(unlock_timestamp > current_timestamp, Error::InvalidInput);
 
     require!(
         ctx.accounts.user_token_account.mint == vault.token_mint,
-        VaultError::InvalidMint
+        Error::InvalidInput
     );
 
     let pool_state = ctx.accounts.pool_state.load()?;
-    require!(
-        pool_state.lp_mint == vault.token_mint,
-        VaultError::InvalidMint
-    );
+    require!(pool_state.lp_mint == vault.token_mint, Error::InvalidInput);
 
     let (vault_0_amount, vault_1_amount) = pool_state.vault_amount_without_fee(
         ctx.accounts.token_0_vault.amount,
@@ -31,10 +25,10 @@ pub fn handler(ctx: Context<Deposit>, amount: u64, unlock_timestamp: i64) -> Res
     );
     let deposit_token_per_lp_0 = vault_0_amount
         .checked_div(pool_state.lp_supply)
-        .ok_or(VaultError::ArithmeticUnderflow)?;
+        .ok_or(Error::ArithmeticError)?;
     let deposit_token_per_lp_1 = vault_1_amount
         .checked_div(pool_state.lp_supply)
-        .ok_or(VaultError::ArithmeticUnderflow)?;
+        .ok_or(Error::ArithmeticError)?;
 
     token_interface::transfer_checked(
         CpiContext::new(
@@ -54,7 +48,7 @@ pub fn handler(ctx: Context<Deposit>, amount: u64, unlock_timestamp: i64) -> Res
     user_lock.amount = user_lock
         .amount
         .checked_add(amount)
-        .ok_or(VaultError::ArithmeticOverflow)?;
+        .ok_or(Error::ArithmeticError)?;
     user_lock.unlock_timestamp = unlock_timestamp;
     user_lock.deposit_token_per_lp_0 = deposit_token_per_lp_0;
     user_lock.deposit_token_per_lp_1 = deposit_token_per_lp_1;
@@ -62,7 +56,7 @@ pub fn handler(ctx: Context<Deposit>, amount: u64, unlock_timestamp: i64) -> Res
     vault.total_locked = vault
         .total_locked
         .checked_add(amount)
-        .ok_or(VaultError::ArithmeticOverflow)?;
+        .ok_or(Error::ArithmeticError)?;
 
     emit!(DepositEvent {
         user: ctx.accounts.user.key(),
